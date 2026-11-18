@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora Avanzada de Modelos EOQ</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .results-box { background-color: #eef2f7; border-left: 4px solid #0d6efd; padding: 15px; border-radius: 6px; }
+    </style>
+</head>
+<body>
+
+    <div class="container my-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card p-4">
+                    <h2 class="text-center mb-4 text-primary fw-bold">Calculadora de Modelos EOQ</h2>
+                    
+                    <!-- Selector de Modelo -->
+                    <div class="mb-3">
+                        <label for="modeloSelect" class="form-label fw-bold">Seleccione el Modelo de Inventario:</label>
+                        <select id="modeloSelect" class="form-select" onchange="cambiarModelo()">
+                            <option value="0">1. EOQ Clásico / Básico</option>
+                            <option value="1">2. EOQ con Faltantes Planeados</option>
+                            <option value="2">3. EOQ con Producción / Tasa Finita (EPQ)</option>
+                            <option value="3">4. EPQ con Faltantes Planeados</option>
+                            <option value="4">5. EOQ con Descuentos por Cantidad</option>
+                        </select>
+                    </div>
+
+                    <!-- Formulario de Entradas -->
+                    <form id="eoqForm" onsubmit="event.preventDefault(); calcular();">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Demanda Anual (D):</label>
+                                <input type="number" step="any" id="inputD" class="form-control" required placeholder="Ej. 1200 o 6000">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Costo de Ordenar (S):</label>
+                                <input type="number" step="any" id="inputS" class="form-control" required placeholder="Ej. 20 o 60">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Costo de Mantenimiento (H o Tasa):</label>
+                                <input type="text" id="inputH" class="form-control" required placeholder="Ej. 0.3 o 20%">
+                                <div class="form-text">Puedes poner dinero directo (0.3) o porcentaje (20%).</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Costo Unitario (C):</label>
+                                <input type="number" step="any" id="inputC" class="form-control" required placeholder="Ej. 20 o 100">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Días Laborales al Año (L):</label>
+                                <input type="number" step="any" id="inputDias" class="form-control" value="365" required>
+                            </div>
+                            <!-- Campos Dinámicos Adicionales -->
+                            <div class="col-md-6 mb-3" id="campoExtra1Container" style="display:none;">
+                                <label class="form-label" id="labelExtra1">Costo de Faltante (Cs):</label>
+                                <input type="number" step="any" id="inputExtra1" class="form-control" placeholder="Ej. 20">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3" id="campoExtra2Container" style="display:none;">
+                                <label class="form-label" id="labelExtra2">Tasa de Producción (P):</label>
+                                <input type="number" step="any" id="inputExtra2" class="form-control" placeholder="Ej. 5000">
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2 mt-3">
+                            <button type="submit" class="btn btn-primary btn-lg">Calcular Resultados</button>
+                        </div>
+                    </form>
+
+                    <!-- Resultados -->
+                    <div class="mt-4" id="resultadoContainer" style="display:none;">
+                        <h4 class="text-success mb-3">Resultados del Análisis:</h4>
+                        <div class="results-box" id="contenidoResultados"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function cambiarModelo() {
+            let modelo = document.getElementById("modeloSelect").value;
+            let c1Container = document.getElementById("campoExtra1Container");
+            let c2Container = document.getElementById("campoExtra2Container");
+            
+            c1Container.style.display = "none";
+            c2Container.style.display = "none";
+
+            if (modelo == "1") { // Faltantes
+                c1Container.style.display = "block";
+                document.getElementById("labelExtra1").innerText = "Costo de Faltante (Cs):";
+            } else if (modelo == "2") { // Producción
+                c2Container.style.display = "block";
+                document.getElementById("labelExtra2").innerText = "Tasa de Producción Anual (P):";
+            } else if (modelo == "3") { // Producción con Faltantes
+                c1Container.style.display = "block";
+                c2Container.style.display = "block";
+                document.getElementById("labelExtra1").innerText = "Costo de Faltante (Cs):";
+                document.getElementById("labelExtra2").innerText = "Tasa de Producción Anual (P):";
+            }
+        }
+
+        function obtenerH(textoH, C) {
+            let limpio = textoH.trim();
+            if (limpio.endsWith("%")) {
+                let porc = parseFloat(limpio.replace("%", ""));
+                return (porc / 100.0) * C;
+            }
+            let val = parseFloat(limpio);
+            if (val > 0 && val < 1) {
+                return val * C; // Soporte si introducen tasa en decimal menor a 1
+            }
+            return val;
+        }
+
+        function calcular() {
+            let modelo = parseInt(document.getElementById("modeloSelect").value);
+            let D = parseFloat(document.getElementById("inputD").value);
+            let S = parseFloat(document.getElementById("inputS").value);
+            let C = parseFloat(document.getElementById("inputC").value);
+            let textoH = document.getElementById("inputH").value;
+            let H = obtenerH(textoH, C);
+            let dias = parseFloat(document.getElementById("inputDias").value);
+
+            let extra1 = parseFloat(document.getElementById("inputExtra1").value) || 0;
+            let extra2 = parseFloat(document.getElementById("inputExtra2").value) || 0;
+
+            let htmlResultados = "";
+
+            if (modelo === 0) { // EOQ Clásico
+                let Q = Math.sqrt((2 * S * D) / H);
+                let N = D / Q;
+                let T = dias / N;
+                let CTotal = (C * D) + (S * N) + (H * Q / 2);
+
+                htmlResultados = `
+                    <p>• <b>Cantidad óptima de pedido (Q*):</b> ${Q.toFixed(2)} unidades</p>
+                    <p>• <b>Número de pedidos al año (N):</b> ${N.toFixed(2)} pedidos</p>
+                    <p>• <b>Tiempo entre órdenes (T):</b> ${T.toFixed(2)} días</p> <p>• <b>Costo Total Anual:</b> $${CTotal.toFixed(2)}</p>
+                `;
+            } else if (modelo === 1) { // EOQ con Faltantes
+                let Cs = extra1;
+                let Q = Math.sqrt((2 * S * D) / H) * Math.sqrt((H + Cs) / Cs);
+                let Smax = Q * (H / (H + Cs));
+                let N = D / Q;
+                let T = dias / N;
+
+                htmlResultados = `
+                    <p>• <b>Cantidad óptima de pedido (Q*):</b> ${Q.toFixed(2)} unidades</p>
+                    <p>• <b>Faltante máximo (Sf):</b> ${Smax.toFixed(2)} unidades</p>
+                    <p>• <b>Número de pedidos al año (N):</b> ${N.toFixed(2)} pedidos</p>
+                    <p>• <b>Tiempo entre órdenes (T
