@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora Avanzada de Modelos EOQ / EPQ</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .results-box { background-color: #eef2f7; border-left: 4px solid #0d6efd; padding: 15px; border-radius: 6px; }
+    </style>
+</head>
+<body>
+
+    <div class="container my-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-9">
+                <div class="card p-4">
+                    <h2 class="text-center mb-4 text-primary fw-bold">Calculadora de Modelos EOQ / EPQ</h2>
+                    
+                    <!-- Selector de Modelo -->
+                    <div class="mb-3">
+                        <label for="modeloSelect" class="form-label fw-bold">Seleccione el Modelo de Inventario:</label>
+                        <select id="modeloSelect" class="form-select" onchange="cambiarModelo()">
+                            <option value="0">1. EOQ Clásico / Básico</option>
+                            <option value="1">2. EOQ con Faltantes Planeados</option>
+                            <option value="2">3. EOQ con Producción / Tasa Finita (EPQ)</option>
+                            <option value="3">4. EPQ con Faltantes Planeados</option>
+                            <option value="4">5. EOQ con Descuentos por Cantidad</option>
+                        </select>
+                    </div>
+
+                    <!-- Formulario de Entradas -->
+                    <form id="eoqForm" onsubmit="event.preventDefault(); calcular();">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label" id="labelD">Demanda Anual (D):</label>
+                                <input type="number" step="any" id="inputD" class="form-control" required placeholder="Ej. 12000">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Costo de Ordenar / Preparar (S):</label>
+                                <input type="number" step="any" id="inputS" class="form-control" required placeholder="Ej. 20">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Costo de Mantenimiento (H o Tasa):</label>
+                                <input type="text" id="inputH" class="form-control" required placeholder="Ej. 3 o 20%">
+                                <div class="form-text">Monto directo (ej. 3) o porcentaje (ej. 20%).</div>
+                            </div>
+                            <div class="col-md-6 mb-3" id="costoUnitarioContainer">
+                                <label class="form-label">Costo Unitario Base (C):</label>
+                                <input type="number" step="any" id="inputC" class="form-control" required placeholder="Ej. 50">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Días Laborales al Año (L):</label>
+                                <input type="number" step="any" id="inputDias" class="form-control" value="365" required>
+                            </div>
+                            <!-- Campos Dinámicos Adicionales -->
+                            <div class="col-md-6 mb-3" id="campoExtra1Container" style="display:none;">
+                                <label class="form-label" id="labelExtra1">Costo de Faltante (Cs):</label>
+                                <input type="number" step="any" id="inputExtra1" class="form-control" placeholder="Ej. 10">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3" id="campoExtra2Container" style="display:none;">
+                                <label class="form-label" id="labelExtra2">Tasa de Producción (P):</label>
+                                <input type="number" step="any" id="inputExtra2" class="form-control" placeholder="Ej. 50000">
+                                <div class="form-text" id="helpP">Ingresa la tasa anual o cambia abajo si es diaria.</div>
+                            </div>
+                            <div class="col-md-6 mb-3" id="campoExtra2BContainer" style="display:none;">
+                                <label class="form-label">¿Cómo ingresas la Tasa de Producción?</label>
+                                <select id="tipoTasaP" class="form-select" onchange="toggleTasaP()">
+                                    <option value="anual">Anual (P)</option>
+                                    <option value="diaria">Diaria (p)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Sección de Descuentos por Cantidad (Modelo 5) -->
+                        <div id="campoDescuentosContainer" style="display:none;" class="mb-3 border p-3 rounded bg-white">
+                            <label class="form-label fw-bold text-dark">Tabla de Descuentos por Cantidad:</label>
+                            <p class="text-muted small">Ingresa los rangos de unidades, su precio unitario y el costo de ordenar (S) respectivo si cambia:</p>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle" id="tablaDescuentos">
+                                    <thead>
+                                        <tr>
+                                            <th>Desde (Q mín)</th>
+                                            <th>Hasta (Q máx / inf)</th>
+                                            <th>Precio Unitario ($)</th>
+                                            <th>Costo Orden (S)</th>
+                                            <th>Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><input type="number" class="form-control form-control-sm qMin" value="1" placeholder="Ej. 1"></td>
+                                            <td><input type="number" class="form-control form-control-sm qMax" value="999" placeholder="Ej. 999"></td>
+                                            <td><input type="number" step="any" class="form-control form-control-sm precioDesc" value="50" placeholder="Ej. 50"></td>
+                                            <td><input type="number" step="any" class="form-control form-control-sm sDesc" value="20" placeholder="Ej. 20"></td>
+                                            <td><button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarFila(this)">X</button></td>
+                                        </tr>
+                                        <tr>
+                                            <td><input type="number" class="form-control form-control-sm qMin" value="1000" placeholder="Ej. 1000"></td>
+                                            <td><input type="number" class="form-control form-control-sm qMax" value="1999" placeholder="Ej. 1999"></td>
+                                            <td><input type="number" step="any" class="form-control form-control-sm precioDesc" value="48" placeholder="Ej. 48"></td>
+                                            <td><input type="number" step="any" class="form-control form-control-sm sDesc" value="20" placeholder="Ej. 20"></td>
+                                            <td><button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarFila(this)">X</button></td>
+                                        </tr>
+                                        <tr>
+                                            <td><input type="number" class="form-control form-control-sm qMin" value="2000" placeholder="Ej. 2000"></td>
+                                            <td><input type="number" class="form-control form-control-sm qMax" value="999999" placeholder="Ej. 999999"></td>
+                                            <td><input type="number" step="any" class="form-control form-control-sm precioDesc" value="45" placeholder="Ej. 45"></td>
+                                            <td><input type="number" step="any" class="form-control form-control-sm sDesc" value="20" placeholder="Ej. 20"></td>
+                                            <td><button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarFila(this)">X</button></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm mt-2" onclick="agregarFila()">+ Agregar Rango</button>
+                        </div>
+
+                        <div class="d-grid gap-2 mt-3">
+                            <button type="submit" class="btn btn-primary btn-lg">Calcular Resultados</button>
+                        </div>
+                    </form>
+
+                    <!-- Resultados -->
+                    <div class="mt-4" id="resultadoContainer" style="display:none;">
+                        <h4 class="text-success mb-3">Resultados del Análisis:</h4>
+                        <div class="results-box" id="contenidoResultados"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function cambiarModelo() {
+            let modelo = parseInt(document.getElementById("modeloSelect").value);
+            let c1 = document.getElementById("campoExtra1Container");
+            let c2 = document.getElementById("campoExtra2Container");
+            let c2b = document.getElementById("campoExtra2BContainer");
+            let c3 = document.getElementById("campoDescuentosContainer");
+            
+            c1.style.display = "none";
+            c2.style.display = "none";
+            c2b.style.display = "none";
+            c3.style.display = "none";
+
+            if (modelo === 1) { // Faltantes
+                c1.style.display = "block";
+                document.getElementById("labelExtra1").innerText = "Costo de Faltante (Cs):";
+            } else if (modelo === 2) { // Producción (EPQ)
+                c2.style.display = "block";
+                c2b.style.display = "block";
+                document.getElementById("labelExtra2").innerText = "Tasa de Producción:";
+            } else if (modelo === 3) { // Producción con Faltantes
+                c1.style.display = "block";
+                c2.style.display = "block";
+                c2b.style.display = "block";
+                document.getElementById("labelExtra1").innerText = "Costo de Faltante (Cs):";
+                document.getElementById("labelExtra2").innerText = "Tasa de Producción:";
+            } else if (modelo === 4) { // Descuentos
+                c3.style.display = "block";
+            }
+        }
+
+        function toggleTasaP() {
+            let tipo = document.getElementById("tipoTasaP").value;
+            let help = document.getElementById("helpP");
+            if (tipo === "diaria") {
+                help.innerText = "Ingresaste tasa por día (p). Se multiplicará por los días laborales para obtener la anual (P).";
+            } else {
+                help.innerText = "Ingresaste la tasa anual directamente (P).";
+            }
+        }
+
+        function agregarFila() {
+            let tbody = document.querySelector("#tablaDescuentos tbody");
+            let tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td><input type="number" class="form-control form-control-sm qMin" placeholder="Desde"></td>
+                <td><input type="number" class="form-control form-control-sm qMax" placeholder="Hasta"></td>
+                <td><input type="number" step="any" class="form-control form-control-sm precioDesc" placeholder="Precio"></td>
+                <td><input type="number" step="any" class="form-control form-control-sm sDesc" value="20" placeholder="S"></td>
+                <td><button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarFila(this)">X</button></td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function eliminarFila(btn) {
+            let row = btn.parentNode.parentNode;
+            row.parentNode.removeChild(row);
+        }
+
+        function obtenerH(textoH, C) {
+            let limpio = textoH.trim();
+            if (limpio.endsWith("%")) {
+                let porc = parseFloat(limpio.replace("%", ""));
+                return (porc / 100.0) * C;
+            }
+            let val = parseFloat(limpio);
+            if (val > 0 && val < 1) return val * C;
+            return val;
+        }
+
+        function calcular() {
+            let modelo = parseInt(document.getElementById("modeloSelect").value);
+            let D = parseFloat(document.getElementById("inputD").value);
+            let S = parseFloat(document.getElementById("inputS").value);
+            let C = parseFloat(document.getElementById("inputC").value);
+            let textoH = document.getElementById("inputH").value;
+            let H = obtenerH(textoH, C);
+            let dias = parseFloat(document.getElementById("inputDias").value);
+
+            let extra1 = parseFloat(document.getElementById("inputExtra1").value) || 0;
+            let extra2 = parseFloat(document.getElementById("inputExtra2").value) || 0;
+            let tipoP = document.getElementById("tipoTasaP").value;
+
+            // Ajustar tasa de producción si se dio en diaria
+            let P = extra2;
+            if (modelo === 2 || modelo === 3) {
+                if (tipoP === "diaria") {
+                    P = extra2 * dias; // Convertir tasa diaria a anual
+                }
+            }
+
+            let htmlResultados = "";
+
+            if (modelo === 0) { // 1. EOQ Clásico
+                let Q = Math.sqrt((2 * S * D) / H);
+                let N = D / Q;
+                let T = dias / N;
+                let CTotal = (C * D) + (S * N) + (H * Q / 2);
+
+                htmlResultados = `
+                    <p>• <b>Cantidad óptima de pedido (Q*):</b> ${Q.toFixed(2)} unidades</p>
+                    <p>• <b>Número de pedidos al año (N):</b> ${N.toFixed(2)} pedidos</p>
+                    <p>• <b>Tiempo entre órdenes (T):</b> ${T.toFixed(2)} días</p>
+                    <p>• <b>Costo Total Anual:</b> $${CTotal.toFixed(2)}</p>
+                `;
+            } else if (modelo === 1) { // 2. EOQ con Faltantes
+                let Cs = extra1;
+                let Q = Math.sqrt((2 * S * D) / H) * Math.sqrt((H + Cs) / Cs);
+                let Smax = Q * (H / (H + Cs));
+                let InventarioMax = Q - Smax;
+                let N = D / Q;
+                let T = dias / N;
+                let CTotal = (C * D) + (S * N) + (H * Math.pow(InventarioMax, 2) / (2 * Q)) + (Cs * Math.pow(Smax, 2) / (2 * Q));
+
+                htmlResultados = `
+                    <p>• <b>Cantidad óptima de pedido (Q*):</b> ${Q.toFixed(2)} unidades</p>
+                    <p>• <b>Inventario Máximo:</b> ${InventarioMax.toFixed(2)} unidades</p>
+                    <p>• <b>Faltante Máximo (Smax):</b> ${Smax.toFixed(2)} unidades</p>
+                    <p>• <b>Número de pedidos al año (N):</b> ${N.toFixed(2)} pedidos</p>
+                    <p>• <b>Tiempo entre órdenes (T):</b> ${T.toFixed(2)} días</p>
+                    <p>• <b>Costo Total Anual:</b> $${CTotal.toFixed(2)}</p>
+                `;
+            } else if (modelo === 2) { // 3. EPQ (Producción)
+                if (P <= D) {
+                    htmlResultados = `<span class="text-danger">Error: La tasa de producción anual (${P.toFixed(2)}) debe ser mayor que la demanda anual (${D}).</span>`;
+                } else {
+                    let Q = Math.sqrt((2 * S * D) / (H * (1 - (D / P))));
+                    let N = D / Q;
+                    let T = dias / N;
+                    let CTotal = (C * D) + (S * N) + (H * (Q / 2) * (1 - (D / P)));
+
+                    htmlResultados = `
+                        <p>• <b>Lote óptimo de producción (Q*):</b> ${Q.toFixed(2)} unidades</p>
+                        <p>• <b>Tasa de producción anual usada (P):</b> ${P.toFixed(2)} un/año</p>
+                        <p>• <b>Número de corridas al año (N):</b> ${N.toFixed(2)}</p>
+                        <p>• <b>Tiempo entre ciclos (T):</b> ${T.toFixed(2)} días</p>
+                        <p>• <b>Costo Total Anual:</b> $${CTotal.toFixed(2)}</p>
+                    `;
+                }
+            } else if (modelo === 3) { // 4. EPQ con Faltantes
+                let Cs = extra1;
+                if (P <= D) {
+                    htmlResultados = `<span class="text-danger">Error: La tasa de producción anual (${P.toFixed(2)}) debe ser mayor que la demanda anual (${D}).</span>`;
+                } else {
+                    let factor = (H + Cs) / Cs * (P / (P - D));
+                    let Q = Math.sqrt((2 * S * D) / H) * Math.sqrt(factor);
+                    let Smax = Q * (1 - (D / P)) * (H / (H + Cs));
+                    let N = D / Q;
+                    let T = dias / N;
+
+                    htmlResultados = `
+                        <p>• <b>Lote óptimo de producción (Q*):</b> ${Q.toFixed(2)} unidades</p>
+                        <p>• <b>Faltante máximo (Smax):</b> ${Smax.toFixed(2)} unidades</p>
+                        <p>• <b>Tasa de producción anual usada (P):</b> ${P.toFixed(2)} un/año</p>
+                        <p>• <b>Número de corridas al año (N):</b> ${N.toFixed(2)}</p>
+                        <p>• <b>Tiempo entre ciclos (T):</b> ${T.toFixed(2)} días</p>
+                    `;
+                }
+            } else if (modelo === 4) { // 5. Descuentos por Cantidad con Tabla
+                let filas = document.querySelectorAll("#tablaDescuentos tbody tr");
+                let mejoresResultados = "";
+                let costoMinimoGlobal = Infinity;
+                let mejorOpcionTexto = "";
+
+                htmlResultados = `<h6 class="fw-bold text-primary">Evaluación por cada rango de descuento:</h6><hr>`;
+
+                filas.forEach((fila, index) => {
+                    let qMin = parseFloat(fila.querySelector(".qMin").value) || 0;
+                    let qMax = parseFloat(fila.querySelector(".qMax").value) || 999999;
+                    let precio = parseFloat(fila.querySelector(".precioDesc").value) || C;
+                    let sFila = parseFloat(fila.querySelector(".sDesc").value) || S;
+                    
+                    let hFila = obtenerH(textoH, precio);
+                    let Q = Math.sqrt((2 * sFila * D) / hFila);
+                    
+                    let qUtilizado = Q;
+                    let esFactible = false;
+
+                    if (Q < qMin) {
+                        qUtilizado = qMin;
+                        esFactible = true; // Ajustado al límite inferior del rango
+                    } else if (Q >= qMin && Q <= qMax) {
+                        esFactible = true; // Cae dentro del rango óptimo
+                    } else {
+                        qUtilizado = qMin; // Si Q es mayor al rango, se evalúa en el quiebre más cercano o queda inviable para este tramo
+                        esFactible = false; 
+                    }
+
+                    let costoTotal = (precio * D) + (sFila * (D / qUtilizado)) + (hFila * (qUtilizado / 2));
+
+                    htmlResultados += `
+                        <div class="mb-2 p-2 border rounded bg-light">
+                            <b>Tramo ${index + 1} (${qMin} - ${qMax === 999999 ? 'En adelante' : qMax}):</b><br>
+                            • Precio Unitario: $${precio} | S: $${sFila} | H calculado: $${hFila.toFixed(2)}<br>
+                            • EOQ Puro del tramo: ${Q.toFixed(2)} | Q evaluado: ${qUtilizado.toFixed(2)} ${esFactible ? '(Factible en rango)' : '(Ajustado a frontera)'}<br>
+                            • <b>Costo Total Anual:</b> $${costoTotal.toFixed(2)}
+                        </div>
+                    `;
+
+                    if (costoTotal < costoMinimoGlobal) {
+                        costoMinimoGlobal = costoTotal;
+                        mejorOpcionTexto = `El mejor descuento es usando el rango de <b>${qMin} a ${qMax}</b> con precio unitario de <b>$${precio}</b> (Costo Total: $${costoTotal.toFixed(2)})`;
+                    }
+                });
+
+                htmlResultados += `<div class="alert alert-success mt-3"><b>Conclusión Óptima:</b><br>${mejorOpcionTexto}</div>`;
+            }
+
+            document.getElementById("contenidoResultados").innerHTML = htmlResultados;
+            document.getElementById("resultadoContainer").style.display = "block";
+        }
+    </script>
+</body>
+</html>
